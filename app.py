@@ -1,3 +1,4 @@
+import logging
 from flask import Flask, request, jsonify, send_file
 from tensorflow.keras.models import load_model
 import tensorflow.keras.backend as K
@@ -6,8 +7,15 @@ import numpy as np
 import matplotlib.pyplot as plt
 import cv2
 from PIL import Image
+import io
+import base64
 import gdown
 import os
+
+# Configurer le logging
+logging.basicConfig(level=logging.INFO,
+                    format="%(asctime)s - %(levelname)s - %(message)s")
+
 
 def colorize_mask(mask):
     """
@@ -18,32 +26,42 @@ def colorize_mask(mask):
         np.ndarray: Masque coloré en RGB.
     """
     cmap = plt.get_cmap('tab10')  # Utiliser la palette tab10
-    mask_color = cmap(mask / mask.max())  # Normaliser le masque pour qu'il soit entre 0 et 1
-    mask_color = (mask_color[:, :, :3] * 255).astype(np.uint8)  # Convertir en RGB (0-255)
+    # Normaliser le masque pour qu'il soit entre 0 et 1
+    mask_color = cmap(mask / mask.max())
+    # Convertir en RGB (0-255)
+    mask_color = (mask_color[:, :, :3] * 255).astype(np.uint8)
     return mask_color
+
 
 # URL de téléchargement direct du modèle Google Drive
 MODEL_DRIVE_URL = "https://drive.google.com/uc?id=1WG7lxRpHNoXrJF1VN5KnGWEo5UYZfZcU"
 MODEL_PATH = "best_model_albumentations_2.keras"
 
 # Fonctions personnalisées
+
+
 @register_keras_serializable()
 def dice_coeff(y_true, y_pred):
     smooth = 1.0
     y_true_f = K.flatten(K.cast(y_true, 'float32'))
     y_pred_f = K.flatten(K.cast(y_pred, 'float32'))
     intersection = K.sum(y_true_f * y_pred_f)
-    score = (2. * intersection + smooth) / (K.sum(y_true_f) + K.sum(y_pred_f) + smooth)
+    score = (2. * intersection + smooth) / \
+        (K.sum(y_true_f) + K.sum(y_pred_f) + smooth)
     return score
+
 
 @register_keras_serializable()
 def dice_loss(y_true, y_pred):
     return 1 - dice_coeff(y_true, y_pred)
 
+
 @register_keras_serializable()
 def total_loss(y_true, y_pred):
-    binary_crossentropy_loss = tf.keras.losses.binary_crossentropy(y_true, y_pred)
+    binary_crossentropy_loss = tf.keras.losses.binary_crossentropy(
+        y_true, y_pred)
     return binary_crossentropy_loss + (3 * dice_loss(y_true, y_pred))
+
 
 @register_keras_serializable()
 def jaccard_score(y_true, y_pred):
@@ -55,6 +73,8 @@ def jaccard_score(y_true, y_pred):
     return (intersection + smooth) / (union + smooth)
 
 # Fonction pour calculer l'IoU (Jaccard) pour chaque classe
+
+
 @register_keras_serializable()
 def calculate_iou(true_mask, pred_mask, num_classes):
     ious = []
@@ -64,6 +84,7 @@ def calculate_iou(true_mask, pred_mask, num_classes):
         iou = jaccard_score(true_cls.flatten(), pred_cls.flatten())
         ious.append(iou)
     return ious
+
 
 # Vérifier et télécharger le modèle si nécessaire
 if not os.path.exists(MODEL_PATH):
@@ -83,56 +104,107 @@ model = load_model(MODEL_PATH, custom_objects={
 # Initialiser l'application Flask
 app = Flask(__name__)
 
-# Point d'entrée pour prédire le masque
-@app.route('/predict', methods=['POST'])
+
+def decode_image(base64_str):
+    """
+    Décoder une image encodée en base64 en un tableau numpy.
+    """
+    try:
+        decoded_bytes = base64.b64decode(base64_str)
+        image = Image.open(io.BytesIO(decoded_bytes)).convert("RGB")
+        logging.info("Image décodée avec succès.")
+        return np.array(image)
+    except Exception as e:
+        logging.error(f"Erreur lors du décodage de l'image : {e}")
+        raise
+
+
+def encode_image(image_array):
+    """
+    Encoder un tableau numpy en base64.
+    """
+    try:
+        pil_image = Image.fromarray(image_array)
+        buffer = io.BytesIO()
+        pil_image.save(buffer, format="PNG")
+        buffer.seek(0)
+        encoded_image = base64.b64encode(buffer.read()).decode("utf-8")
+        logging.info("Image encodée avec succès en base64.")
+        return encoded_image
+    except Exception as e:
+        logging.error(f"Erreur lors de l'encodage de l'image : {e}")
+        raise
+
+
+@app.route("/predict", methods=["POST"])
 def predict_mask():
-    # Vérifier si un fichier image est fourni
-    if 'file' not in request.files:
-        return jsonify({"error": "Aucune image n'a été fournie"}), 400
+    logging.info("Requête reçue pour la prédiction.")
 
-    file = request.files['file']
+    # Vérifier la présence de l'image dans la requête
+    data = request.json
+    if "image" not in data:
+        logging.error("Aucune image trouvée dans la requête.")
+        return jsonify({"error": "Image manquante dans la requête"}), 400
 
-    # Lire l'image
-    image = Image.open(file.stream).convert('RGB')
-    image = np.array(image)
+    # Décoder l'image encodée en base64
+    try:
+        input_image = decode_image(data["image"])
+        logging.info(f"Dimensions de l'image décodée : {input_image.shape}")
+    except Exception as e:
+        return jsonify({"error": f"Impossible de décoder l'image : {e}"}), 400
 
-    # Vérification de l'image d'entrée
-    print(f"Image shape: {image.shape}")
-    #Image.fromarray(image).save("debug_input_image.png")  # Sauvegarde l'image pour débogage
-
-
-    # Prétraitement : redimensionner l'image à la taille attendue par le modèle
-    image_resized = cv2.resize(image, (512, 256))  # Dimensions attendues par le modèle
-    image_resized = image_resized / 255.0  # Normaliser les pixels entre 0 et 1
-    image_resized = np.expand_dims(image_resized, axis=0)  # Ajouter une dimension pour le batch
+    # Prétraiter l'image
+    try:
+        image_resized = cv2.resize(input_image, (512, 256))  # Redimensionner
+        image_resized = image_resized / 255.0  # Normaliser
+        # Ajouter une dimension pour le batch
+        image_resized = np.expand_dims(image_resized, axis=0)
+        logging.info("Image prétraitée pour la prédiction.")
+    except Exception as e:
+        logging.error(f"Erreur lors du prétraitement de l'image : {e}")
+        return jsonify({"error": f"Erreur lors du prétraitement : {e}"}), 500
 
     # Prédire le masque
-    predicted_mask = model.predict(image_resized)[0]  # Première image du batch
-    print(f"Predicted mask shape: {predicted_mask.shape}")
-    print(f"Unique values in predicted mask: {np.unique(predicted_mask)}")
+    try:
+        predicted_mask = model.predict(image_resized)[0]
+        logging.info(
+            f"Prédiction réussie. Dimensions du masque : {predicted_mask.shape}")
+    except Exception as e:
+        logging.error(f"Erreur lors de la prédiction : {e}")
+        return jsonify({"error": f"Erreur lors de la prédiction : {e}"}), 500
 
-    # Post-traitement : convertir les probabilités en classes
-    predicted_mask = np.argmax(predicted_mask, axis=-1)
+    # Post-traitement : convertir et redimensionner le masque
+    try:
+        predicted_mask = np.argmax(predicted_mask, axis=-1)
+        predicted_mask_resized = cv2.resize(
+            predicted_mask.astype(np.uint8),
+            (input_image.shape[1], input_image.shape[0]),
+            interpolation=cv2.INTER_NEAREST,
+        )
+        predicted_mask_colored = colorize_mask(predicted_mask_resized)
+        logging.info("Masque prédictif colorisé avec succès.")
+    except Exception as e:
+        logging.error(f"Erreur lors du post-traitement : {e}")
+        return jsonify({"error": f"Erreur lors du post-traitement : {e}"}), 500
 
-    # Redimensionner le masque à la taille originale de l'image d'entrée
-    predicted_mask_resized = cv2.resize(predicted_mask.astype(np.uint8), (image.shape[1], image.shape[0]), interpolation=cv2.INTER_NEAREST)
+    # Encoder le masque en base64
+    try:
+        mask_encoded = encode_image(predicted_mask_colored)
+        logging.info("Masque prédictif encodé avec succès.")
+    except Exception as e:
+        logging.error(f"Erreur lors de l'encodage du masque : {e}")
+        return jsonify({"error": f"Erreur lors de l'encodage : {e}"}), 500
 
-    # Coloriser le masque
-    predicted_mask_colored = colorize_mask(predicted_mask_resized)
+    # Retourner l'image encodée en base64
+    return jsonify({"predicted_image": mask_encoded})
 
-    # Sauvegarder le masque coloré dans un fichier temporaire
-    mask_image = Image.fromarray(predicted_mask_colored)
-    temp_path = "predicted_mask.png"
-    mask_image.save(temp_path)
 
-    # Retourner le fichier prédictif comme réponse
-    return send_file(temp_path, mimetype='image/png')
-
-# Point d'entrée pour tester le service
-@app.route('/')
+@app.route("/")
 def home():
     return "API de prédiction de masque est opérationnelle."
 
+
 # Lancer l'application
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+if __name__ == "__main__":
+    logging.info("Démarrage de l'application Flask...")
+    app.run(host="0.0.0.0", port=5000)
