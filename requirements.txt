@@ -143,7 +143,6 @@ tensorflow==2.18.0
 tensorflow-addons==0.22.0
 tensorflow-estimator==2.14.0
 tensorflow-io-gcs-filesystem==0.31.0
-tensorflow_intel==2.18.0
 termcolor==2.5.0
 terminado==0.18.1
 tifffile==2024.9.20
