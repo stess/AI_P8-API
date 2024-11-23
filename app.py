@@ -1,5 +1,5 @@
 import logging
-from flask import Flask, request, jsonify, send_file
+from flask import Flask, request, jsonify
 from tensorflow.keras.models import load_model
 import tensorflow.keras.backend as K
 from keras.saving import register_keras_serializable
@@ -33,8 +33,6 @@ def colorize_mask(mask):
     return mask_color
 
 
-# URL de téléchargement direct du modèle Google Drive
-MODEL_DRIVE_URL = "https://drive.google.com/uc?id=1WG7lxRpHNoXrJF1VN5KnGWEo5UYZfZcU"
 MODEL_PATH = "best_model_albumentations_2.keras"
 
 # Fonctions personnalisées
@@ -85,11 +83,6 @@ def calculate_iou(true_mask, pred_mask, num_classes):
         ious.append(iou)
     return ious
 
-
-# Vérifier et télécharger le modèle si nécessaire
-if not os.path.exists(MODEL_PATH):
-    print("Téléchargement du modèle depuis Google Drive...")
-    gdown.download(MODEL_DRIVE_URL, MODEL_PATH, quiet=False)
 
 # Charger le modèle avec la fonction personnalisée
 print("Chargement du modèle...")
