@@ -168,22 +168,35 @@ def predict_mask():
 
     # Post-traitement : convertir et redimensionner le masque
     try:
-        predicted_mask = np.argmax(predicted_mask, axis=-1)
+        predicted_mask = np.argmax(
+            predicted_mask, axis=-1)  # Indices des classes
         predicted_mask_resized = cv2.resize(
             predicted_mask.astype(np.uint8),
             (input_image.shape[1], input_image.shape[0]),
             interpolation=cv2.INTER_NEAREST,
         )
-        predicted_mask_colored = colorize_mask(predicted_mask_resized)
-        logging.info("Masque prédictif colorisé avec succès.")
+
+        # Appliquer un étirement d'histogramme pour améliorer les contrastes
+        min_val = np.min(predicted_mask_resized)
+        max_val = np.max(predicted_mask_resized)
+        if max_val > min_val:  # S'assurer que l'étirement est possible
+            predicted_mask_resized = (
+                (predicted_mask_resized - min_val) * (255 / (max_val - min_val))
+            ).astype(np.uint8)
+        logging.info("Étirement d'histogramme appliqué avec succès.")
     except Exception as e:
         logging.error(f"Erreur lors du post-traitement : {e}")
         return jsonify({"error": f"Erreur lors du post-traitement : {e}"}), 500
 
-    # Encoder le masque en base64
+    # Encoder le masque en niveaux de gris
     try:
-        mask_encoded = encode_image(predicted_mask_colored)
-        logging.info("Masque prédictif encodé avec succès.")
+        # Convertir le masque en image PIL en niveaux de gris
+        grayscale_mask = Image.fromarray(predicted_mask_resized, mode="L")
+        buffer = io.BytesIO()
+        grayscale_mask.save(buffer, format="PNG")
+        buffer.seek(0)
+        mask_encoded = base64.b64encode(buffer.read()).decode("utf-8")
+        logging.info("Masque prédictif encodé avec succès en niveaux de gris.")
     except Exception as e:
         logging.error(f"Erreur lors de l'encodage du masque : {e}")
         return jsonify({"error": f"Erreur lors de l'encodage : {e}"}), 500
