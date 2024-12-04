@@ -1,4 +1,3 @@
-import logging
 from flask import Flask, request, jsonify
 from tensorflow.keras.models import load_model
 import tensorflow.keras.backend as K
@@ -11,10 +10,6 @@ import io
 import base64
 import gdown
 import os
-
-# Configurer le logging
-logging.basicConfig(level=logging.INFO,
-                    format="%(asctime)s - %(levelname)s - %(message)s")
 
 
 def colorize_mask(mask):
@@ -105,10 +100,8 @@ def decode_image(base64_str):
     try:
         decoded_bytes = base64.b64decode(base64_str)
         image = Image.open(io.BytesIO(decoded_bytes)).convert("RGB")
-        logging.info("Image décodée avec succès.")
         return np.array(image)
     except Exception as e:
-        logging.error(f"Erreur lors du décodage de l'image : {e}")
         raise
 
 
@@ -122,27 +115,22 @@ def encode_image(image_array):
         pil_image.save(buffer, format="PNG")
         buffer.seek(0)
         encoded_image = base64.b64encode(buffer.read()).decode("utf-8")
-        logging.info("Image encodée avec succès en base64.")
         return encoded_image
     except Exception as e:
-        logging.error(f"Erreur lors de l'encodage de l'image : {e}")
         raise
 
 
 @app.route("/predict", methods=["POST"])
 def predict_mask():
-    logging.info("Requête reçue pour la prédiction.")
 
     # Vérifier la présence de l'image dans la requête
     data = request.json
     if "image" not in data:
-        logging.error("Aucune image trouvée dans la requête.")
         return jsonify({"error": "Image manquante dans la requête"}), 400
 
     # Décoder l'image encodée en base64
     try:
         input_image = decode_image(data["image"])
-        logging.info(f"Dimensions de l'image décodée : {input_image.shape}")
     except Exception as e:
         return jsonify({"error": f"Impossible de décoder l'image : {e}"}), 400
 
@@ -152,18 +140,13 @@ def predict_mask():
         image_resized = image_resized / 255.0  # Normaliser
         # Ajouter une dimension pour le batch
         image_resized = np.expand_dims(image_resized, axis=0)
-        logging.info("Image prétraitée pour la prédiction.")
     except Exception as e:
-        logging.error(f"Erreur lors du prétraitement de l'image : {e}")
         return jsonify({"error": f"Erreur lors du prétraitement : {e}"}), 500
 
     # Prédire le masque
     try:
         predicted_mask = model.predict(image_resized)[0]
-        logging.info(
-            f"Prédiction réussie. Dimensions du masque : {predicted_mask.shape}")
     except Exception as e:
-        logging.error(f"Erreur lors de la prédiction : {e}")
         return jsonify({"error": f"Erreur lors de la prédiction : {e}"}), 500
 
     # Post-traitement : convertir et redimensionner le masque
@@ -183,9 +166,7 @@ def predict_mask():
             predicted_mask_resized = (
                 (predicted_mask_resized - min_val) * (255 / (max_val - min_val))
             ).astype(np.uint8)
-        logging.info("Étirement d'histogramme appliqué avec succès.")
     except Exception as e:
-        logging.error(f"Erreur lors du post-traitement : {e}")
         return jsonify({"error": f"Erreur lors du post-traitement : {e}"}), 500
 
     # Encoder le masque en niveaux de gris
@@ -196,9 +177,7 @@ def predict_mask():
         grayscale_mask.save(buffer, format="PNG")
         buffer.seek(0)
         mask_encoded = base64.b64encode(buffer.read()).decode("utf-8")
-        logging.info("Masque prédictif encodé avec succès en niveaux de gris.")
     except Exception as e:
-        logging.error(f"Erreur lors de l'encodage du masque : {e}")
         return jsonify({"error": f"Erreur lors de l'encodage : {e}"}), 500
 
     # Retourner l'image encodée en base64
@@ -212,5 +191,4 @@ def home():
 
 # Lancer l'application
 if __name__ == "__main__":
-    logging.info("Démarrage de l'application Flask...")
     app.run()
