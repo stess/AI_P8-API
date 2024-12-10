@@ -28,7 +28,7 @@ def colorize_mask(mask):
     return mask_color
 
 
-MODEL_PATH = "best_model_albumentations_2.keras"
+MODEL_PATH = "model.keras"
 
 # Fonctions personnalisées
 
@@ -136,7 +136,7 @@ def predict_mask():
 
     # Prétraiter l'image
     try:
-        image_resized = cv2.resize(input_image, (512, 256))  # Redimensionner
+        image_resized = cv2.resize(input_image, (1024, 512))  # Redimensionner
         image_resized = image_resized / 255.0  # Normaliser
         # Ajouter une dimension pour le batch
         image_resized = np.expand_dims(image_resized, axis=0)
