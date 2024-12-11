@@ -28,7 +28,7 @@ def colorize_mask(mask):
     return mask_color
 
 
-MODEL_PATH = "model.keras"
+MODEL_PATH = "/model/model.keras"
 
 # Fonctions personnalisées
 
