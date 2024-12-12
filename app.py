@@ -1,6 +1,6 @@
 from flask import Flask, request, jsonify
-from tensorflow.keras.models import load_model
-import tensorflow.keras.backend as K
+#from tensorflow.keras.models import load_model
+#import tensorflow.keras.backend as K
 from keras.saving import register_keras_serializable
 import numpy as np
 import matplotlib.pyplot as plt
