@@ -8,8 +8,6 @@ import cv2
 from PIL import Image
 import io
 import base64
-import gdown
-import os
 
 
 def colorize_mask(mask):
@@ -28,7 +26,7 @@ def colorize_mask(mask):
     return mask_color
 
 
-MODEL_PATH = "/model/model.keras"
+MODEL_PATH = "model.keras"
 
 # Fonctions personnalisées
 
@@ -136,7 +134,7 @@ def predict_mask():
 
     # Prétraiter l'image
     try:
-        image_resized = cv2.resize(input_image, (1024, 512))  # Redimensionner
+        image_resized = cv2.resize(input_image, (512, 256))  # Redimensionner
         image_resized = image_resized / 255.0  # Normaliser
         # Ajouter une dimension pour le batch
         image_resized = np.expand_dims(image_resized, axis=0)
