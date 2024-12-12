@@ -1,5 +1,6 @@
 from flask import Flask, request, jsonify
 from tensorflow.keras.models import load_model
+import tensorflow.keras.backend as K
 
 
 # Initialiser l'application Flask
